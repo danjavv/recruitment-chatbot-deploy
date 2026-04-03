@@ -1,7 +1,7 @@
 import os
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
+from openai import AzureOpenAI
 
 # --------------------------------------------------
 # Page Config
@@ -13,13 +13,20 @@ st.caption("Upload your recruitment Excel files and ask questions about your hir
 # --------------------------------------------------
 # API Key
 # --------------------------------------------------
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
-if not GEMINI_API_KEY:
-    st.error("GEMINI_API_KEY not found. Add it in Streamlit Cloud Secrets or a .env file.")
+AZURE_OPENAI_API_KEY     = st.secrets.get("AZURE_OPENAI_API_KEY", "")     or os.getenv("AZURE_OPENAI_API_KEY", "")
+AZURE_OPENAI_ENDPOINT    = st.secrets.get("AZURE_OPENAI_ENDPOINT", "")    or os.getenv("AZURE_OPENAI_ENDPOINT", "")
+AZURE_OPENAI_MODEL       = st.secrets.get("AZURE_OPENAI_MODEL", "")       or os.getenv("AZURE_OPENAI_MODEL", "")
+AZURE_OPENAI_API_VERSION = st.secrets.get("AZURE_OPENAI_API_VERSION", "") or os.getenv("AZURE_OPENAI_API_VERSION", "")
+
+if not all([AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_MODEL, AZURE_OPENAI_API_VERSION]):
+    st.error("Azure OpenAI credentials not found. Add AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_MODEL, and AZURE_OPENAI_API_VERSION in Streamlit Cloud Secrets or environment variables.")
     st.stop()
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
+client = AzureOpenAI(
+    api_key=AZURE_OPENAI_API_KEY,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_version=AZURE_OPENAI_API_VERSION,
+)
 
 # --------------------------------------------------
 # Sidebar: File Upload
@@ -134,19 +141,20 @@ if prompt := st.chat_input("Ask a recruitment question..."):
                     "Be concise and accurate.\n\n"
                     f"Recruitment dataset (JSON):\n{st.session_state.df_json}"
                 )
-                full_prompt = f"{system_context}\n\nQuestion: {prompt}"
 
                 try:
-                    response = model.generate_content(
-                        full_prompt,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.1,
-                            max_output_tokens=2000,
-                        ),
+                    response = client.chat.completions.create(
+                        model=AZURE_OPENAI_MODEL,
+                        messages=[
+                            {"role": "system", "content": system_context},
+                            {"role": "user",   "content": prompt},
+                        ],
+                        temperature=0.1,
+                        max_tokens=2000,
                     )
-                    answer = response.text
+                    answer = response.choices[0].message.content
                 except Exception as e:
-                    answer = f"⚠️ Error calling Gemini API: {e}"
+                    answer = f"⚠️ Error calling Azure OpenAI API: {e}"
 
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
